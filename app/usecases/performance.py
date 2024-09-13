@@ -1,13 +1,15 @@
 from __future__ import annotations
 
-import hashlib
-import logging
 from typing import TypedDict
+
+from tenacity import retry
+from tenacity import stop_after_attempt
+from tenacity import wait_exponential
 
 import app.state
 import config
 from app.constants.mode import Mode
-from app.objects.path import Path
+from app.reliability import retry_if_exception_network_related
 
 
 class PerformanceScore(TypedDict):
@@ -20,6 +22,12 @@ class PerformanceScore(TypedDict):
     miss_count: int
 
 
+@retry(
+    retry=retry_if_exception_network_related(),
+    wait=wait_exponential(),
+    stop=stop_after_attempt(10),
+    reraise=True,
+)
 async def calculate_performances(
     scores: list[PerformanceScore],
 ) -> list[tuple[float, float]]:
@@ -27,18 +35,18 @@ async def calculate_performances(
         f"{config.PERFORMANCE_SERVICE_URL}/api/v1/calculate",
         json=scores,
     )
-    if not response.is_success:
-        logging.error(
-            "Performance service returned non-2xx code on calculate_performances",
-            extra={"status": response.status_code},
-        )
-        return [(0.0, 0.0)] * len(scores)
+    response.raise_for_status()
 
     data = response.json()
     return [(result["pp"], result["stars"]) for result in data]
 
 
-# TODO: split sr & pp calculations
+@retry(
+    retry=retry_if_exception_network_related(),
+    wait=wait_exponential(),
+    stop=stop_after_attempt(10),
+    reraise=True,
+)
 async def calculate_performance(
     *,
     beatmap_id: int,
@@ -63,12 +71,7 @@ async def calculate_performance(
             },
         ],
     )
-    if response.status_code != 200:
-        logging.error(
-            "Performance service returned non-2xx code on calculate_performance",
-            extra={"status": response.status_code},
-        )
-        return 0.0, 0.0
+    response.raise_for_status()
 
     data = response.json()[0]
     return data["pp"], data["stars"]

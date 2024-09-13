@@ -232,15 +232,21 @@ async def submit_score(
         if score_exists:
             return Response(b"error: no")
 
-        score.pp, score.sr = await app.usecases.performance.calculate_performance(
-            beatmap_id=beatmap.id,
-            beatmap_md5=beatmap.md5,
-            mode=score.mode,
-            mods=score.mods.value,
-            max_combo=score.max_combo,
-            accuracy=score.acc,
-            miss_count=score.nmiss,
-        )
+        try:
+            score.pp, score.sr = await app.usecases.performance.calculate_performance(
+                beatmap_id=beatmap.id,
+                beatmap_md5=beatmap.md5,
+                mode=score.mode,
+                mods=score.mods.value,
+                max_combo=score.max_combo,
+                accuracy=score.acc,
+                miss_count=score.nmiss,
+            )
+        except Exception:
+            logging.exception(
+                "Failed to calculate performance for score",
+                extra={"score_id": score.id},
+            )
 
         # calculate the score's status
         if score.passed:
